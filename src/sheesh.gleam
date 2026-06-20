@@ -1,4 +1,5 @@
 import command
+import delivery
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
@@ -10,6 +11,7 @@ import response
 import session
 
 pub fn main() -> Nil {
+  let assert Ok(_) = delivery.setup()
   io.println("Hello from sheesh!")
 
   let assert Ok(_) =
@@ -122,10 +124,11 @@ fn handle_data_line(
 ) -> session.SmtpSession {
   case line {
     "." -> {
-      // end of message, deliver it!
-      // TODO: "queued as ${messageID}"
-      send(conn, response.Queued("..."))
-      // TODO: ACTUALLY SEND/QUEUE IT
+      let from = option.unwrap(state.from, "")
+      case delivery.deliver(from, state.to, state.data_lines) {
+        Ok(id) -> send(conn, response.Queued(id))
+        Error(_) -> send(conn, response.TransactionFailed)
+      }
       session.reset_transaction(state)
     }
     _ -> {

@@ -13,6 +13,7 @@ pub type SmtpResponse {
   BadSequence
   UnknownCommand
   SyntaxError
+  TransactionFailed
 }
 
 pub fn render(response: SmtpResponse) -> String {
@@ -26,6 +27,8 @@ pub fn render(response: SmtpResponse) -> String {
     UnknownCommand -> line(500, "Unknown command")
     SyntaxError -> line(501, "Syntax error in parameters or arguments")
     Ehlo(domain, capabilities) -> render_multiline(domain, capabilities)
+    TransactionFailed ->
+      line(451, "Requested action aborted: error while processing")
   }
 }
 
