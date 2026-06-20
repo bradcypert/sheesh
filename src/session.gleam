@@ -48,6 +48,16 @@ pub fn new() -> SmtpSession {
   )
 }
 
+pub fn reset_transaction(session: SmtpSession) -> SmtpSession {
+  SmtpSession(
+    ..session,
+    state: Ready,
+    from: option.None,
+    to: [],
+    data_lines: [],
+  )
+}
+
 pub fn print_session(session: SmtpSession) {
   let from = case session.from {
     option.None -> "None"
@@ -59,7 +69,9 @@ pub fn print_session(session: SmtpSession) {
   io.println("\tFrom: " <> from)
   io.println("\tTo: [" <> string.join(session.to, with: ",") <> "]")
   io.println(
-    "\tData Lines: [\n" <> string.join(session.data_lines, with: "\n") <> "]",
+    "\tData Lines: [\n"
+    <> string.join(session.data_lines, with: "\n\t\t")
+    <> "\t]",
   )
   io.println("}")
 }

@@ -3,10 +3,10 @@ import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
 import gleam/io
-import gleam/list
 import gleam/option.{None}
 import gleam/string
 import glisten.{Packet}
+import response
 import session
 
 pub fn main() -> Nil {
@@ -16,7 +16,11 @@ pub fn main() -> Nil {
     glisten.new(
       fn(conn) {
         let assert Ok(_) =
-          conn_send_string(conn, "220 localhost ESMTP sheesh\r\n")
+          conn_send_string(
+            conn,
+            // TODO: Pull out the localhost to an env var or similar
+            response.render(response.ServiceReady("localhost")),
+          )
         #(session.new(), None)
       },
       loop,
@@ -67,51 +71,43 @@ fn handle_line(
 ) -> session.SmtpSession {
   case state.state {
     session.Data -> handle_data_line(line, state, conn)
-    session.Greeting -> {
-      case command.parse(line) {
-        command.Ehlo(_domain) | command.Helo(_domain) -> {
-          let assert Ok(_) = conn_send_string(conn, "250 OK\r\n")
-          session.SmtpSession(..state, state: session.Ready)
-        }
-        _ -> {
-          let assert Ok(_) =
-            conn_send_string(conn, "503 Bad sequence of commands\r\n")
-          state
-        }
-      }
-    }
     _ -> {
-      case command.parse(line) {
-        command.Ehlo(_domain) | command.Helo(_domain) -> {
-          let assert Ok(_) = conn_send_string(conn, "250 OK\r\n")
-          session.SmtpSession(..state, state: session.Ready)
+      case state.state, command.parse(line) {
+        _, command.Ehlo(domain:) | _, command.Helo(domain:) -> {
+          send(conn, response.Ehlo(domain, ["8BITMIME"]))
+          session.reset_transaction(state)
         }
-        command.MailFrom(address:) -> {
-          let assert Ok(_) = conn_send_string(conn, "250 OK\r\n")
+        session.Ready, command.MailFrom(address:) -> {
+          send(conn, response.Ok)
           session.SmtpSession(
             ..state,
             state: session.MailFrom,
             from: option.Some(address),
           )
         }
-        command.RcptTo(address:) -> {
-          let assert Ok(_) = conn_send_string(conn, "250 OK\r\n")
+        session.MailFrom, command.RcptTo(address:)
+        | session.RcptTo, command.RcptTo(address:)
+        -> {
+          send(conn, response.Ok)
           session.SmtpSession(..state, state: session.RcptTo, to: [
             address,
             ..state.to
           ])
         }
-        command.Data -> {
-          let assert Ok(_) =
-            conn_send_string(conn, "354 End data with <CR><LF>.<CR><LF>\r\n")
+        session.RcptTo, command.Data -> {
+          send(conn, response.StartMailInput)
           session.SmtpSession(..state, state: session.Data)
         }
-        command.Quit -> {
-          let assert Ok(_) = conn_send_string(conn, "221 Bye\r\n")
+        _, command.Quit -> {
+          send(conn, response.Bye)
           session.SmtpSession(..state, state: session.Quit)
         }
-        _ -> {
-          let assert Ok(_) = conn_send_string(conn, "500 Unknown Command\r\n")
+        _, command.Unknown(_) -> {
+          send(conn, response.UnknownCommand)
+          state
+        }
+        _, _ -> {
+          send(conn, response.BadSequence)
           state
         }
       }
@@ -128,14 +124,22 @@ fn handle_data_line(
     "." -> {
       // end of message, deliver it!
       // TODO: "queued as ${messageID}"
-      let assert Ok(_) = conn_send_string(conn, "250 OK: queued\r\n")
+      send(conn, response.Queued("..."))
       // TODO: ACTUALLY SEND/QUEUE IT
-      session.SmtpSession(..state, state: session.Ready, data_lines: [])
+      session.reset_transaction(state)
     }
     _ -> {
-      session.SmtpSession(..state, data_lines: list.append(state.data_lines, [line]))
+      // RFC 5321 4.5.2: a leading '.' on a body line was stuffed by the sender, strip one back off.
+      let content = command.unstuff(line)
+      // TODO: list.reverse data lines when performing delivery. Much faster to prepend for now, but need to reverse when sending
+      session.SmtpSession(..state, data_lines: [content, ..state.data_lines])
     }
   }
+}
+
+fn send(conn, response: response.SmtpResponse) {
+  let assert Ok(_) = conn_send_string(conn, response.render(response))
+  Nil
 }
 
 fn conn_send_string(conn, string: String) {

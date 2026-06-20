@@ -30,3 +30,10 @@ fn clean_recipient(recipient: String) {
   |> string.replace(">", "")
   |> string.trim()
 }
+
+pub fn unstuff(line: String) -> String {
+  case string.starts_with(line, ".") {
+    True -> string.drop_start(line, 1)
+    False -> line
+  }
+}

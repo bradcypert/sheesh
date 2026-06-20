@@ -47,3 +47,11 @@ pub fn parse_quit_test() {
 
   assert out == command.Quit
 }
+
+pub fn unstuff_double_dot_test() {
+  assert command.unstuff("..foo") == ".foo"
+}
+
+pub fn unstuff_plain_line_unchanged_test() {
+  assert command.unstuff("foo") == "foo"
+}
