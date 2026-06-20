@@ -48,6 +48,20 @@ pub fn parse_quit_test() {
   assert out == command.Quit
 }
 
+pub fn parse_mail_with_params_test() {
+  assert parse("MAIL FROM:<a@b.com> BODY=8BITMIME SIZE=2048")
+    == command.MailFrom("a@b.com")
+}
+
+pub fn parse_rcpt_with_params_test() {
+  assert parse("RCPT TO:<a@b.com> ORCPT=rfc822;a@b.com")
+    == command.RcptTo("a@b.com")
+}
+
+pub fn parse_mail_null_sender_test() {
+  assert parse("MAIL FROM:<>") == command.MailFrom("")
+}
+
 pub fn unstuff_double_dot_test() {
   assert command.unstuff("..foo") == ".foo"
 }
